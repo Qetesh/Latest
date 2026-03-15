@@ -340,5 +340,5 @@
 "NvM-TY-Zhn.title" = "<dnl>";
 "Uax-et-NIt.title" = "打开";
 "Mdn-MF-57Q.title" = "显示没有可用更新信息的应用。";
-"rG3-x9-kec.title" = "列出有限支持的应用。更新信息可能过时或不准确，且无法在Latest中直接执行更新。\n";
+"rG3-x9-kec.title" = "列出可通过 Homebrew 更新的应用。Latest 可以显示其更新信息，并在已安装 Homebrew 时调用 brew 命令执行更新。\n";
 "DfQ-ss-Qv2.title" = "设置";

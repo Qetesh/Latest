@@ -42,6 +42,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	func state(for identifier: App.Bundle.Identifier) -> UpdateOperation.ProgressState {
 		return self.operation(for: identifier)?.progressState ?? .none
 	}
+
+	/// Returns the current status description for a given app.
+	func statusDescription(for identifier: App.Bundle.Identifier) -> String? {
+		return self.operation(for: identifier)?.progressDescription
+	}
 	
 	override func addOperation(_ op: Operation) {
 		// Abort if the operation is of an unknown type
@@ -52,6 +57,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 		
 		// Abort if the app is already in the queue
 		if !self.contains(operation.appIdentifier) {
+			if let homebrewOperation = operation as? HomebrewUpdateOperation,
+			   let previousHomebrewOperation = self.operations.compactMap({ $0 as? HomebrewUpdateOperation }).last {
+				homebrewOperation.addDependency(previousHomebrewOperation)
+			}
+
 			super.addOperation(op)
 			
 			operation.progressHandler = { identifier in
@@ -69,35 +79,59 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 	/// A mapping of observers associated with apps.
 	private var observers = [App.Bundle.Identifier : [NSObject: ObserverHandler]]()
 	
+	/// App identifiers that already have an observer update queued on the main thread.
+	private var pendingNotifications = Set<App.Bundle.Identifier>()
+	
+	/// Guards access to observer bookkeeping.
+	private let observerLock = NSLock()
+	
 	/// Adds the observer if it is not already registered.
 	func addObserver(_ observer: NSObject, to identifier: App.Bundle.Identifier, handler: @escaping ObserverHandler) {
-		var observers = self.observers[identifier] ?? [:]
-		
-		// Only add the observer, if it is not already installed.
-		guard observers[observer] == nil else {
-			return
+		let shouldRegister = self.observerLock.withCriticalScope { () -> Bool in
+			var observers = self.observers[identifier] ?? [:]
+			
+			// Only add the observer, if it is not already installed.
+			guard observers[observer] == nil else {
+				return false
+			}
+			
+			observers[observer] = handler
+			self.observers[identifier] = observers
+			return true
 		}
-		
-		observers[observer] = handler
+		guard shouldRegister else { return }
 		
 		// Call handler immediately to propagate initial state
 		handler(self.state(for: identifier))
-		
-		// Update observers
-		self.observers[identifier] = observers
 	}
 	
 	/// Removes the observer.
 	func removeObserver(_ observer: NSObject, for identifier: App.Bundle.Identifier) {
-		self.observers[identifier]?.removeValue(forKey: observer)
+		_ = self.observerLock.withCriticalScope {
+			self.observers[identifier]?.removeValue(forKey: observer)
+		}
 	}
 		
 	/// Notifies observers about state changes.
 	private func notifyObservers(for identifier: App.Bundle.Identifier) {
-		let state = self.state(for: identifier)
+		let shouldSchedule = self.observerLock.withCriticalScope { () -> Bool in
+			guard !self.pendingNotifications.contains(identifier) else {
+				return false
+			}
+			
+			self.pendingNotifications.insert(identifier)
+			return true
+		}
+		guard shouldSchedule else { return }
 		
 		DispatchQueue.main.async {
-			self.observers[identifier]?.forEach { (key: NSObject, handler: UpdateQueue.ObserverHandler) in
+			let state = self.state(for: identifier)
+			let handlers = self.observerLock.withCriticalScope { () -> [UpdateQueue.ObserverHandler] in
+				self.pendingNotifications.remove(identifier)
+				return Array((self.observers[identifier] ?? [:]).values)
+			}
+			
+			handlers.forEach { handler in
 				handler(state)
 			}
 		}

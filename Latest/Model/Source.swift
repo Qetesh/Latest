@@ -63,7 +63,7 @@ extension App.Source {
 		/// The source is fully supported, including in-app updates.
 		case full
 		
-		/// There is some update information available, but it may be incomplete. In-app updates do not work.
+		/// Update information is available and Latest can update the app with limited integration, such as via Homebrew.
 		case limited
 		
 		/// The source is unknown and no update information is available.
@@ -87,22 +87,33 @@ extension App.Source {
 // MARK: Accessors
 
 extension App.Source.SupportState {
+	private static let limitedColor = NSColor(red: 249.0 / 255.0, green: 208.0 / 255.0, blue: 148.0 / 255.0, alpha: 1.0)
+
 	/// Returns an image using the system status indicator (colored dot) for the given status.
 	var statusImage: NSImage {
-		let name = switch self {
-		case .full: NSImage.statusAvailableName
-		case .limited: NSImage.statusPartiallyAvailableName
-		case .none: NSImage.statusUnavailableName
+		switch self {
+		case .limited:
+			let baseImage = NSImage(named: NSImage.statusPartiallyAvailableName)!
+			let image = NSImage(size: baseImage.size, flipped: false) { rect in
+				baseImage.draw(in: rect)
+				Self.limitedColor.setFill()
+				rect.fill(using: .sourceAtop)
+				return true
+			}
+			image.isTemplate = false
+			return image
+		case .full, .none:
+			let name = self == .full ? NSImage.statusAvailableName : NSImage.statusUnavailableName
+			
+			return NSImage(named: name)!
 		}
-		
-		return NSImage(named: name)!
 	}
 	
 	/// Returns a label briefly describing the given status.
 	var label: String {
 		switch self {
 		case .full: NSLocalizedString("SupportedLabel", comment: "A label used for apps which are fully supported by Latest.")
-		case .limited: NSLocalizedString("LimitedSupportLabel", comment: "A label used for apps which are partially supported by Latest.")
+		case .limited: NSLocalizedString("LimitedSupportLabel", comment: "A label used for apps which are updated via Homebrew.")
 		case .none: NSLocalizedString("UnsupportedLabel", comment: "A label used for apps which are not supported by Latest.")
 		}
 	}
@@ -111,7 +122,7 @@ extension App.Source.SupportState {
 	var compactLabel: String {
 		switch self {
 		case .full: NSLocalizedString("SupportedCompactLabel", comment: "A compact label used for apps which are fully supported by Latest.")
-		case .limited: NSLocalizedString("LimitedSupportCompactLabel", comment: "A compact label used for apps which are partially supported by Latest.")
+		case .limited: NSLocalizedString("LimitedSupportCompactLabel", comment: "A compact label used for apps which are updated via Homebrew.")
 		case .none: NSLocalizedString("UnsupportedCompactLabel", comment: "A compact label used for apps which are not supported by Latest.")
 		}
 	}

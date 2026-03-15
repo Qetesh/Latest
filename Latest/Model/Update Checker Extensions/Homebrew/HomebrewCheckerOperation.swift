@@ -51,12 +51,22 @@ class HomebrewCheckerOperation: StatefulOperation, UpdateCheckerOperation, @unch
 			return
 		}
 		
-		repository.updateInfo(for: bundle) { bundle, version, minimumOSVersion in
+		repository.homebrewEntry(for: bundle) { bundle, entry in
 			defer { self.finish() }
-			guard let version else { return }
-			self.update = App.Update(app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: .homebrew, date: nil, releaseNotes: nil, updateAction: .external(label: bundle.name, block: { app in
-				app.open()
-			}))
+			guard let entry else { return }
+
+			let action: App.Update.Action
+			if HomebrewTool.isAvailable {
+				action = .builtIn(block: { app in
+					UpdateQueue.shared.addOperation(HomebrewUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier, caskToken: entry.token))
+				})
+			} else {
+				action = .external(label: bundle.name, block: { app in
+					app.open()
+				})
+			}
+
+			self.update = App.Update(app: bundle, remoteVersion: entry.version, minimumOSVersion: entry.minimumOSVersion, source: .homebrew, date: nil, releaseNotes: nil, updateAction: action)
 		}
 	}
 	

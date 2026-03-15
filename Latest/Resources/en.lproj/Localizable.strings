@@ -68,7 +68,25 @@
 "InstallingUpdateStatus" = "Installing";
 
 /* Description for apps with limited support. */
-"LimitedSupportDescription" = "Update information is generally available but may sometimes be outdated or inaccurate. Updates cannot be performed directly here.";
+"LimitedSupportDescription" = "This app can be updated via Homebrew. Latest can run brew commands to perform the update when Homebrew is installed.";
+
+/* Title of error shown when a Homebrew update failed. */
+"HomebrewUpdateFailedError" = "Homebrew Update Failed";
+
+/* Error message shown when a Homebrew command failed. The placeholder is the command arguments. */
+"HomebrewCommandFailedError" = "brew %@ failed.";
+
+/* Status text while running brew update. */
+"HomebrewRunningUpdateStatus" = "Running brew update";
+
+/* Status text while running brew reinstall for a cask. The placeholder is the cask token. */
+"HomebrewRunningReinstallStatus" = "Running brew reinstall --cask --force %@";
+
+/* Title of error shown when Homebrew is not installed. */
+"HomebrewNotFoundError" = "Homebrew Not Found";
+
+/* Description of error shown when Homebrew is not installed, suggesting the user install it. */
+"HomebrewNotFoundErrorDescription" = "Install Homebrew to update cask apps from Latest.";
 
 /* Current Version String */
 "LocalVersionFormat" = "Your version: %@";
@@ -131,7 +149,7 @@
 "LimitedSupportCompactLabel" = "Limited";
 
 /* A label used for apps which are partially supported by Latest. */
-"LimitedSupportLabel" = "Limited support";
+"LimitedSupportLabel" = "Updated via Homebrew";
 
 /* A compact label used for apps which are fully supported by Latest. */
 "SupportedCompactLabel" = "Supported";

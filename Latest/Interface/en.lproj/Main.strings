@@ -376,5 +376,5 @@
 /* Class = "NSButtonCell"; title = "Report Issue…"; ObjectID = "pNJ-Hl-Qxz"; */
 "pNJ-Hl-Qxz.title" = "Report Issue…";
 
-/* Class = "NSTextFieldCell"; title = "List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.\n"; ObjectID = "rG3-x9-kec"; */
-"rG3-x9-kec.title" = "List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.\n";
+/* Class = "NSTextFieldCell"; title = "List apps that can be updated via Homebrew. Latest can show their update information and, if Homebrew is installed, run brew commands to update them.\n"; ObjectID = "rG3-x9-kec"; */
+"rG3-x9-kec.title" = "List apps that can be updated via Homebrew. Latest can show their update information and, if Homebrew is installed, run brew commands to update them.\n";

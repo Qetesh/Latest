@@ -47,13 +47,15 @@ class UpdateRepository {
 	
 	/// Returns update information for the given bundle.
 	func updateInfo(for bundle: App.Bundle, handler: @escaping (_ bundle: App.Bundle, _ version: Version?, _ minimumOSVersion: OperatingSystemVersion?) -> Void) {
+		self.homebrewEntry(for: bundle) { bundle, entry in
+			handler(bundle, entry?.version, entry?.minimumOSVersion)
+		}
+	}
+
+	/// Returns the Homebrew repository entry for the given bundle, if available.
+	func homebrewEntry(for bundle: App.Bundle, handler: @escaping (_ bundle: App.Bundle, _ entry: Entry?) -> Void) {
 		let checkApp = {
-			guard let entry = self.entry(for: bundle) else {
-				handler(bundle, nil, nil)
-				return
-			}
-			
-			return handler(bundle, entry.version, entry.minimumOSVersion)
+			handler(bundle, self.entry(for: bundle))
 		}
 		
 		/// Entries are still being fetched, add the request to the queue.

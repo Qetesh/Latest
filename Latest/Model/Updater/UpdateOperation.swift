@@ -43,19 +43,69 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 	
 	/// The identifier of the updated app.
 	let appIdentifier: App.Bundle.Identifier
+
+	/// Guards access to progress state shared between background work and the UI.
+	private let progressLock = NSLock()
+
+	/// Private storage for the current progress handler.
+	private var _progressHandler: UpdateQueue.ProgressHandler?
+
+	/// Private storage for the current progress description.
+	private var _progressDescription: String?
+
+	/// Private storage for the current progress state.
+	private var _progressState: UpdateOperation.ProgressState = .pending
 	
 	/// The handler forwarding the current progress state.
 	var progressHandler: UpdateQueue.ProgressHandler? {
-		didSet {
+		get {
+			return self.progressLock.withCriticalScope {
+				self._progressHandler
+			}
+		}
+		set {
+			let handler = self.progressLock.withCriticalScope { () -> UpdateQueue.ProgressHandler? in
+				self._progressHandler = newValue
+				return self._progressHandler
+			}
+
 			// Notify immediately
-			self.progressHandler?(self.appIdentifier)
+			handler?(self.appIdentifier)
+		}
+	}
+
+	/// The text describing the current progress state.
+	var progressDescription: String? {
+		get {
+			return self.progressLock.withCriticalScope {
+				self._progressDescription
+			}
+		}
+		set {
+			let handler = self.progressLock.withCriticalScope { () -> UpdateQueue.ProgressHandler? in
+				guard self._progressDescription != newValue else { return nil }
+				self._progressDescription = newValue
+				return self._progressHandler
+			}
+
+			handler?(self.appIdentifier)
 		}
 	}
 	
-		/// The current update state.
-	var progressState: UpdateOperation.ProgressState = .pending {
-		didSet {
-			self.progressHandler?(self.appIdentifier)
+	/// The current update state.
+	var progressState: UpdateOperation.ProgressState {
+		get {
+			return self.progressLock.withCriticalScope {
+				self._progressState
+			}
+		}
+		set {
+			let handler = self.progressLock.withCriticalScope { () -> UpdateQueue.ProgressHandler? in
+				self._progressState = newValue
+				return self._progressHandler
+			}
+
+			handler?(self.appIdentifier)
 		}
 	}
 
@@ -70,15 +120,18 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 	// MARK: - Operation sub-classing
 	
 	override func execute() {
+		self.progressDescription = nil
 		self.progressState = .initializing
 	}
 	
 	override func cancel() {
 		super.cancel()
+		self.progressDescription = nil
 		self.progressState = .cancelling
 	}
 		
 	override func finish() {
+		self.progressDescription = nil
 		if let error = self.error {
 			self.progressState = .error(error)
 		} else {

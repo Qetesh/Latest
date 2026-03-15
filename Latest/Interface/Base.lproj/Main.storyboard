@@ -1357,7 +1357,7 @@
                                                     <rect key="frame" x="18" y="0.0" width="330" height="56"/>
                                                     <textFieldCell key="cell" id="rG3-x9-kec">
                                                         <font key="font" metaFont="smallSystem"/>
-                                                        <string key="title">List apps with limited support. Update information may be outdated or inaccurate, and updates cannot be performed directly in Latest.
+                                                        <string key="title">List apps that can be updated via Homebrew. Latest can show their update information and, if Homebrew is installed, run brew commands to update them.
 </string>
                                                         <color key="textColor" name="secondaryLabelColor" catalog="System" colorSpace="catalog"/>
                                                         <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>

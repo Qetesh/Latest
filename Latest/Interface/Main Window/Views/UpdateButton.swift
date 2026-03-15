@@ -123,8 +123,11 @@ class UpdateButton: NSButton {
 		
 	/// Updates the UI state with the given progress definition.
 	private func updateInterface(with state: UpdateOperation.ProgressState) {
+		let customStatus = self.app.map { UpdateQueue.shared.statusDescription(for: $0.identifier) }
+
 		switch state {
 		case .none:
+			self.toolTip = nil
 			if let app = self.app, self.showActionButton {
 				self.updateInterfaceVisibility(with: app.updateAvailable ? .update : .open)
 			} else {
@@ -133,11 +136,11 @@ class UpdateButton: NSButton {
 		
 		case .pending:
 			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("WaitingUpdateStatus", comment: "Update progress state of waiting to start an update")
+			self.toolTip = customStatus ?? NSLocalizedString("WaitingUpdateStatus", comment: "Update progress state of waiting to start an update")
 		
 		case .initializing:
 			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("InitializingUpdateStatus", comment: "Update progress state of initializing an update")
+			self.toolTip = customStatus ?? NSLocalizedString("InitializingUpdateStatus", comment: "Update progress state of initializing an update")
 		
 		case .downloading(let loadedSize, let totalSize):
 			self.updateInterfaceVisibility(with: .progress)
@@ -145,30 +148,35 @@ class UpdateButton: NSButton {
 			// Downloading goes to 75% of the progress
 			self.contentCell.updateProgress = (Double(loadedSize) / Double(totalSize)) * 0.75
 			
-			let byteFormatter = ByteCountFormatter()
-			byteFormatter.countStyle = .file
-			
-			let formatString = NSLocalizedString("DownloadingUpdateStatus", comment: "Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB'")
-			self.toolTip = String.localizedStringWithFormat(formatString, byteFormatter.string(fromByteCount: loadedSize), byteFormatter.string(fromByteCount: totalSize))
+			if let customStatus = customStatus {
+				self.toolTip = customStatus
+			} else {
+				let byteFormatter = ByteCountFormatter()
+				byteFormatter.countStyle = .file
+				
+				let formatString = NSLocalizedString("DownloadingUpdateStatus", comment: "Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB'")
+				self.toolTip = String.localizedStringWithFormat(formatString, byteFormatter.string(fromByteCount: loadedSize), byteFormatter.string(fromByteCount: totalSize))
+			}
 		
 		case .extracting(let progress):
 			self.updateInterfaceVisibility(with: .progress)
 			
 			// Extracting goes to 95%
 			self.contentCell.updateProgress = 0.75 + (progress * 0.25)
-			self.toolTip = NSLocalizedString("ExtractingUpdateStatus", comment: "Update progress state of extracting the downloaded update")
+			self.toolTip = customStatus ?? NSLocalizedString("ExtractingUpdateStatus", comment: "Update progress state of extracting the downloaded update")
 		
 		case .installing:
 			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("InstallingUpdateStatus", comment: "Update progress state of installing an update")
+			self.toolTip = customStatus ?? NSLocalizedString("InstallingUpdateStatus", comment: "Update progress state of installing an update")
 		
 		case .error(let error):
 			self.updateInterfaceVisibility(with: self.showActionButton ? .error : .none)
+			self.toolTip = nil
 			self.error = error
 		
 		case .cancelling:
 			self.updateInterfaceVisibility(with: .indeterminate)
-			self.toolTip = NSLocalizedString("CancellingUpdateStatus", comment: "Update progress state of cancelling an update")
+			self.toolTip = customStatus ?? NSLocalizedString("CancellingUpdateStatus", comment: "Update progress state of cancelling an update")
 		}
 	}
 	
@@ -268,12 +276,28 @@ private extension UpdateButton {
 		let message = NSLocalizedString("UpdateErrorAlertTitle", comment: "Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app.")
 		alert.messageText = String.localizedStringWithFormat(message, self.app!.name)
 		
-		alert.informativeText = error.localizedDescription
+		alert.informativeText = self.informativeText(for: error)
 		
 		alert.addButton(withTitle: NSLocalizedString("RetryAction", comment: "Button to retry an update in an error dialogue"))
 		alert.addButton(withTitle: NSLocalizedString("CancelAction", comment: "Cancel button in an update dialogue"))
 		
 		return alert
+	}
+
+	private func informativeText(for error: Error) -> String {
+		var parts = [error.localizedDescription]
+
+		if let localizedError = error as? LocalizedError {
+			if let failureReason = localizedError.failureReason, failureReason != error.localizedDescription {
+				parts.append(failureReason)
+			}
+
+			if let recoverySuggestion = localizedError.recoverySuggestion {
+				parts.append(recoverySuggestion)
+			}
+		}
+
+		return parts.joined(separator: "\n\n")
 	}
 	
 }
