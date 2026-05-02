@@ -11,28 +11,21 @@ permissions:
   contents: write
   pull-requests: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 concurrency:
   group: macos-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build ${{ matrix.label }} package
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            label: apple-silicon
-            runner: macos-26
-          - arch: x86_64
-            label: intel
-            runner: macos-26-intel
+    name: Build universal package
+    runs-on: macos-26
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -44,11 +37,9 @@ jobs:
             -scheme Latest
 
       - name: Build app
-        env:
-          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          DERIVED_DATA="${RUNNER_TEMP}/DerivedData-${ARCH}"
+          DERIVED_DATA="${RUNNER_TEMP}/DerivedData-universal"
 
           xcodebuild build \
             -project Latest.xcodeproj \
@@ -56,7 +47,7 @@ jobs:
             -configuration Release \
             -destination "generic/platform=macOS" \
             -derivedDataPath "${DERIVED_DATA}" \
-            ARCHS="${ARCH}" \
+            ARCHS="arm64 x86_64" \
             ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY=""
@@ -70,9 +61,6 @@ jobs:
           echo "APP_PATH=${APP_PATH}" >> "${GITHUB_ENV}"
 
       - name: Build installer package
-        env:
-          ARCH: ${{ matrix.arch }}
-          LABEL: ${{ matrix.label }}
         run: |
           set -euo pipefail
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP_PATH}/Contents/Info.plist")"
@@ -80,15 +68,14 @@ jobs:
           SHORT_SHA="${GITHUB_SHA::7}"
           PACKAGE_VERSION="${VERSION}.${BUILD}"
           ASSET_DIR="${RUNNER_TEMP}/release-assets"
-          PACKAGE_ARCH="${ARCH//_/-}"
-          PKG_PATH="${ASSET_DIR}/Latest-${VERSION}-${SHORT_SHA}-${LABEL}.pkg"
+          PKG_PATH="${ASSET_DIR}/Latest-${VERSION}-${SHORT_SHA}-universal.pkg"
 
           mkdir -p "${ASSET_DIR}"
 
           pkgbuild \
             --component "${APP_PATH}" \
             --install-location "/Applications" \
-            --identifier "com.max-langer.Latest.${PACKAGE_ARCH}" \
+            --identifier "com.max-langer.Latest.universal" \
             --version "${PACKAGE_VERSION}" \
             "${PKG_PATH}"
 
@@ -99,9 +86,9 @@ jobs:
           echo "PKG_PATH=${PKG_PATH}" >> "${GITHUB_ENV}"
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Latest-${{ matrix.label }}-pkg
+          name: Latest-universal-pkg
           path: ${{ env.PKG_PATH }}
           if-no-files-found: error
 
@@ -112,14 +99,14 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
-          pattern: Latest-*-pkg
+          pattern: Latest-universal-pkg
           path: release-assets
           merge-multiple: true
 
@@ -158,8 +145,7 @@ jobs:
             echo
             echo "## Packages"
             echo
-            echo "- Apple silicon: arm64 installer package"
-            echo "- Intel: x86_64 installer package"
+            echo "- Universal macOS installer package: arm64 and x86_64"
           } > RELEASE_NOTES.md
 
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
