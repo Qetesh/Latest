@@ -18,15 +18,17 @@ concurrency:
 jobs:
   build:
     name: Build ${{ matrix.label }} package
-    runs-on: macos-13
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: arm64
             label: apple-silicon
+            runner: macos-26
           - arch: x86_64
             label: intel
+            runner: macos-26-intel
 
     steps:
       - name: Check out repository
