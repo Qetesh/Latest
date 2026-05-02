@@ -1,0 +1,202 @@
+name: Build macOS Release Packages
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }} package
+    runs-on: macos-13
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            label: apple-silicon
+          - arch: x86_64
+            label: intel
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve package dependencies
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project Latest.xcodeproj \
+            -scheme Latest
+
+      - name: Build app
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="${RUNNER_TEMP}/DerivedData-${ARCH}"
+
+          xcodebuild build \
+            -project Latest.xcodeproj \
+            -scheme Latest \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "${DERIVED_DATA}" \
+            ARCHS="${ARCH}" \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=""
+
+          APP_PATH="${DERIVED_DATA}/Build/Products/Release/Latest.app"
+          if [[ ! -d "${APP_PATH}" ]]; then
+            echo "Expected app was not built at ${APP_PATH}" >&2
+            exit 1
+          fi
+
+          echo "APP_PATH=${APP_PATH}" >> "${GITHUB_ENV}"
+
+      - name: Build installer package
+        env:
+          ARCH: ${{ matrix.arch }}
+          LABEL: ${{ matrix.label }}
+        run: |
+          set -euo pipefail
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP_PATH}/Contents/Info.plist")"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${APP_PATH}/Contents/Info.plist")"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          PACKAGE_VERSION="${VERSION}.${BUILD}"
+          ASSET_DIR="${RUNNER_TEMP}/release-assets"
+          PACKAGE_ARCH="${ARCH//_/-}"
+          PKG_PATH="${ASSET_DIR}/Latest-${VERSION}-${SHORT_SHA}-${LABEL}.pkg"
+
+          mkdir -p "${ASSET_DIR}"
+
+          pkgbuild \
+            --component "${APP_PATH}" \
+            --install-location "/Applications" \
+            --identifier "com.max-langer.Latest.${PACKAGE_ARCH}" \
+            --version "${PACKAGE_VERSION}" \
+            "${PKG_PATH}"
+
+          lipo -archs "${APP_PATH}/Contents/MacOS/Latest"
+          pkgutil --check-signature "${PKG_PATH}" || true
+
+          echo "ASSET_DIR=${ASSET_DIR}" >> "${GITHUB_ENV}"
+          echo "PKG_PATH=${PKG_PATH}" >> "${GITHUB_ENV}"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Latest-${{ matrix.label }}-pkg
+          path: ${{ env.PKG_PATH }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Latest-*-pkg
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+            if [[ -n "${PREVIOUS_TAG}" ]]; then
+              RANGE="${PREVIOUS_TAG}..${GITHUB_REF_NAME}"
+            else
+              RANGE="${GITHUB_REF_NAME}"
+            fi
+            TITLE="Latest ${GITHUB_REF_NAME}"
+          else
+            SHORT_SHA="${GITHUB_SHA::7}"
+            RELEASE_TAG="build-${SHORT_SHA}"
+            RANGE="${GITHUB_SHA}^..${GITHUB_SHA}"
+            TITLE="Latest commit ${SHORT_SHA}"
+          fi
+
+          {
+            echo "## Changes"
+            echo
+            PR_JSON="$(gh pr list --state merged --search "${GITHUB_SHA}" --json number,title,url,mergedAt --limit 10 2>/dev/null || true)"
+            if [[ "${PR_JSON}" != "[]" && -n "${PR_JSON}" ]]; then
+              echo "${PR_JSON}" | jq -r '.[] | "- #\(.number) \(.title) (\(.url))"'
+            else
+              git log --no-merges --pretty=format:'- %s (%h)' "${RANGE}" || git log --no-merges -1 --pretty=format:'- %s (%h)' "${GITHUB_SHA}"
+              echo
+            fi
+            echo
+            echo "## Packages"
+            echo
+            echo "- Apple silicon: arm64 installer package"
+            echo "- Intel: x86_64 installer package"
+          } > RELEASE_NOTES.md
+
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "RELEASE_TITLE=${TITLE}" >> "${GITHUB_ENV}"
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              gh release edit "${RELEASE_TAG}" \
+                --title "${RELEASE_TITLE}" \
+                --notes-file RELEASE_NOTES.md \
+                --prerelease=false \
+                --latest
+            else
+              gh release edit "${RELEASE_TAG}" \
+                --title "${RELEASE_TITLE}" \
+                --notes-file RELEASE_NOTES.md \
+                --prerelease
+            fi
+          else
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              gh release create "${RELEASE_TAG}" \
+                --target "${GITHUB_SHA}" \
+                --title "${RELEASE_TITLE}" \
+                --notes-file RELEASE_NOTES.md \
+                --latest
+            else
+              gh release create "${RELEASE_TAG}" \
+                --target "${GITHUB_SHA}" \
+                --title "${RELEASE_TITLE}" \
+                --notes-file RELEASE_NOTES.md \
+                --prerelease \
+                --latest=false
+            fi
+          fi
+
+          gh release upload "${RELEASE_TAG}" release-assets/*.pkg --clobber
