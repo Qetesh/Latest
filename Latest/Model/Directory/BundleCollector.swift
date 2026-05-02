@@ -49,11 +49,11 @@ enum BundleCollector {
 		
 	/// Returns a bundle representation for the app at the given url, without Spotlight Metadata.
 	static private func bundle(forAppAt url: URL) -> App.Bundle? {
-		guard let appBundle = Bundle(url: url),
-			  let buildNumber = appBundle.uncachedBundleVersion,
-			  let identifier = appBundle.bundleIdentifier,
-			  let versionNumber = appBundle.versionNumber,
-			  let appName = appBundle.bundleName else {
+		guard let info = AppBundleInfo(url: url),
+			  let buildNumber = info.buildNumber,
+			  let identifier = info.bundleIdentifier,
+			  let versionNumber = info.versionNumber,
+			  let appName = info.name else {
 			return nil
 		}
 		
@@ -79,26 +79,54 @@ enum BundleCollector {
 
 }
 
+fileprivate struct AppBundleInfo {
+	
+	let dictionary: [String: Any]
+	let fallbackBundle: Bundle?
+	
+	init?(url: URL) {
+		fallbackBundle = Bundle(url: url)
+		
+		let infoURL = url.appendingPathComponent("Contents").appendingPathComponent("Info.plist")
+		if let data = try? Data(contentsOf: infoURL),
+		   let propertyList = try? PropertyListSerialization.propertyList(from: data, format: nil),
+		   let dictionary = propertyList as? [String: Any] {
+			self.dictionary = dictionary
+		} else if let fallbackDictionary = fallbackBundle?.uncachedInfoDictionary {
+			self.dictionary = fallbackDictionary
+		} else {
+			return nil
+		}
+	}
+	
+	var buildNumber: String? {
+		return dictionary["CFBundleVersion"] as? String
+	}
+	
+	var bundleIdentifier: String? {
+		return (dictionary["CFBundleIdentifier"] as? String) ?? fallbackBundle?.bundleIdentifier
+	}
+	
+	var name: String? {
+		return dictionary["CFBundleName"] as? String
+	}
+	
+	var versionNumber: String? {
+		return dictionary["CFBundleShortVersionString"] as? String
+	}
+	
+}
+
 fileprivate extension Bundle {
 	
-	/// Returns the bundle version which is guaranteed to be current.
-	var uncachedBundleVersion: String? {
+	/// Returns the info dictionary after asking CoreFoundation to drop cached bundle state.
+	var uncachedInfoDictionary: [String: Any]? {
 		let bundleRef = CFBundleCreate(.none, self.bundleURL as CFURL)
 		
 		// (NS)Bundle has a cache for (all?) properties, presumably to reduce disk access. Therefore, after updating an app, the old bundle version may be
 		// returned. Flushing the cache (private method) resolves this.
 		_CFBundleFlushBundleCaches(bundleRef)
 		
-		return infoDictionary?["CFBundleVersion"] as? String
-	}
-	
-	/// Returns the bundle name when working without Spotlight.
-	var bundleName: String? {
-		return infoDictionary?["CFBundleName"] as? String
-	}
-	
-	/// Returns the short version string when working without Spotlight.
-	var versionNumber: String? {
-		return infoDictionary?["CFBundleShortVersionString"] as? String
+		return infoDictionary
 	}
 }
